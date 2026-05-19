@@ -14,6 +14,7 @@ public class Region : MonoBehaviour
 {
     [Header("연결할 이웃 Region 노드들 (단방향/양방향 가능)")]
     public List<Region> connectedRegions = new List<Region>();
+    public UnityEngine.UI.Button worldSpaceButton; // 이 노드가 제어할 머리 위 버튼
 
     [Header("노드 시각화 설정")]
     [SerializeField] private Color nodeColor = Color.cyan;
