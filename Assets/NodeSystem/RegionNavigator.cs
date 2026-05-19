@@ -28,6 +28,10 @@ public class RegionNavigator : MonoBehaviour
     public System.Action OnMovementStarted;
     public System.Action<Region> OnRegionReached;
 
+    // [이벤트 트리거를 위해 추가된 실시간 진행률 추적 델리게이트]
+    // 매개변수: (스플라인_인덱스, 이전_t_값, 현재_t_값)
+    public System.Action<int, float, float> OnSplinePositionChanged;
+    
     private Coroutine movementCoroutine;
 
     private void Start()
@@ -100,6 +104,9 @@ public class RegionNavigator : MonoBehaviour
 
         float elapsed = 0f;
         var spline = splineContainer.Splines[splineIndex];
+        
+        // 이전 프레임의 t값을 기억해두어 정밀하게 구간 통과 여부를 검출할 수 있게 합니다.
+        float prevT = isReversed ? 1f : 0f;
 
         while (elapsed < travelDuration)
         {
@@ -124,6 +131,10 @@ public class RegionNavigator : MonoBehaviour
                     transform.rotation = Quaternion.LookRotation(moveDirection);
                 }
             }
+
+            // [추가] 외부 매니저가 구간 감지 이벤트를 처리할 수 있도록 틱을 알립니다.
+            OnSplinePositionChanged?.Invoke(splineIndex, prevT, t);
+            prevT = t;
 
             yield return null;
         }
