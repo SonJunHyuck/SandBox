@@ -9,17 +9,27 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 15576d7bc02b4944b82051c0b83c5350, type: 3}
   m_Name: SplineEventPreset
   m_EditorClassIdentifier: Assembly-CSharp::SplineEventPreset
   splineEventConfigs:
-  - splineIndex: 0
+  - splineIndex: 26
     segments:
-    - segmentName: Region0
+    - segmentName: 0_1
       minT: 0
-      maxT: 0.5
-      triggerProbability: 30
+      maxT: 1
+      triggerProbability: 100
       possibleEvents:
       - eventName: Combat1
+        eventType: 1
+        weight: 50
+  - splineIndex: 26
+    segments:
+    - segmentName: 0_2
+      minT: 0
+      maxT: 1
+      triggerProbability: 100
+      possibleEvents:
+      - eventName: Combat2
         eventType: 1
         weight: 50

@@ -1,79 +1,25 @@
 ﻿using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Splines;
 
-// ==========================================================================
-// 1. 시뮬레이션 돌발 이벤트 유형 정의 (전투, 가상악화, 고장 등)
-// ==========================================================================
-public enum SimulationEventType
-{
-    None,
-    Combat,             // 전투 발발
-    SevereWeather,      // 기상 악화 (우천, 황사, 폭설)
-    EngineBreakdown,    // 차량 고장 및 소모품 마모
-    ResourceDiscovery,  // 자원 획득 및 긍정적 이벤트
-    BanditAmbush        // 산적들의 기습 습격
-}
-
-[System.Serializable]
-public class WeightedEvent
-{
-    [Tooltip("디스플레이용 이벤트 요약명")]
-    public string eventName = "전투 돌발 상황";
-    public SimulationEventType eventType = SimulationEventType.Combat;
-    
-    [Tooltip("선택될 가중치 (값이 높을수록 해당 타입 이벤트 중 무작위 뽑기 시 등장 빈도가 잦아짐)")]
-    [Range(1f, 100f)]
-    public float weight = 10f;
-}
-
-[System.Serializable]
-public class SplineEventSegment
-{
-    [Tooltip("에디터 인스펙터 식별용 구간 이름 (예: A-B 구간 전투다발)")]
-    public string segmentName = "구간 A-B";
-    
-    [Header("감지할 진척률 범위 (t)")]
-    [Range(0f, 1f)] public float minT = 0.0f;
-    [Range(0f, 1f)] public float maxT = 0.25f;
-
-    [Header("이벤트 주사위 설정")]
-    [Tooltip("해당 구간에 진입했을 때 이벤트가 발생할 총 종합 확률입니다 (0% ~ 100%)")]
-    [Range(0f, 100f)] public float triggerProbability = 45f;
-
-    [Tooltip("이 구간에서 주사위 굴려 발생에 성공했을 시, 뽑힐 수 있는 돌발 이벤트 목록 (가중치 랜덤)")]
-    public List<WeightedEvent> possibleEvents = new List<WeightedEvent>();
-}
-
-[System.Serializable]
-public class SplineEventConfig
-{
-    [Tooltip("Spline Container 내부의 스플라인 인덱스 번호")]
-    public int splineIndex;
-    public List<SplineEventSegment> segments = new List<SplineEventSegment>();
-}
-
-// ==========================================================================
-// 2. 여러 루트 설정을 자산(.asset)으로 저장할 수 있게 하는 ScriptableObject
-// ==========================================================================
-[CreateAssetMenu(fileName = "NewSplineEventPreset", menuName = "Simulation/Spline Event Preset", order = 120)]
-public class SplineEventPreset : ScriptableObject
-{
-    [Header("스플라인 인덱스별 구간 이벤트 프리셋 설정")]
-    public List<SplineEventConfig> splineEventConfigs = new List<SplineEventConfig>();
-}
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 [DisallowMultipleComponent]
 public class SplineEventManager : MonoBehaviour
 {
-    [Header("타겟 무버 연결")]
-    [Tooltip("월드 상에서 스플라인 레일을 타고 이동할 Navigator 오브젝트를 연결해 줍니다.")]
+    [Header("타겟 무버 연결")] [Tooltip("월드 상에서 스플라인 레일을 타고 이동할 Navigator 오브젝트를 연결해 줍니다.")]
     public RegionNavigator navigator;
 
-    [Header("이벤트 프리셋 자산 연결 (ScriptableObject)")]
-    [Tooltip("에디터 프로젝트 뷰에서 우클릭으로 생성한 SplineEventPreset 파일을 드래그해 넣어주세요.")]
+    [Header("이벤트 프리셋 자산 연결 (ScriptableObject)")] [Tooltip("에디터 프로젝트 뷰에서 우클릭으로 생성한 SplineEventPreset 파일을 드래그해 넣어주세요.")]
     public SplineEventPreset eventPreset;
+
+    [Header("이벤트 안전 장치 세팅")] [Tooltip("한 번 돌발 상황이 발생한 후, 다음 돌발 상황이 발생할 수 있을 때까지의 최소 대기시간(초)입니다.")] [Range(0f, 10f)]
+    public float eventGlobalCooldown = 3.5f;
+
+    // 마지막으로 이벤트가 발동한 타이밍을 기록 (연쇄 트리거 방지용)
+    private float lastEventTriggeredTime = -999f;
 
     // 💡 중복 실행 방지 관리용 캐시셋 (한 번 주행 시 하나의 구간 이벤트는 한 번씩만 발동해야 함)
     // 키 형식: "{splineIndex}_{segmentIndex}"
@@ -122,14 +68,17 @@ public class SplineEventManager : MonoBehaviour
     /// </summary>
     private void OnPositionChanged(int splineIndex, float prevT, float currT)
     {
-        // 프리셋이 비어있다면 검사 생략
+        // 1. 프리셋이 비어있다면 검사 생략
         if (eventPreset == null || eventPreset.splineEventConfigs == null) return;
 
-        // 1. 해당 스플라인을 위한 이벤트 설정서가 프리셋에 존재하는지 색인
+        // 2. 런타임 글로벌 쿨다운 검증: 이전 이벤트가 터진 지 얼마 되지 않았다면 검사 스킵
+        if (Time.time < lastEventTriggeredTime + eventGlobalCooldown) return;
+
+        // 3. 해당 스플라인을 위한 이벤트 설정서가 프리셋에 존재하는지 색인
         SplineEventConfig config = eventPreset.splineEventConfigs.Find(c => c.splineIndex == splineIndex);
         if (config == null || config.segments == null) return;
 
-        // 2. 등록된 모든 구간(Segment)들과 충돌 여부 체크
+        // 4. 등록된 모든 구간(Segment)들과 충돌 여부 체크
         for (int i = 0; i < config.segments.Count; i++)
         {
             var segment = config.segments[i];
@@ -143,7 +92,12 @@ public class SplineEventManager : MonoBehaviour
             {
                 // 즉시 중복 처리 완료 선언 후, 이벤트 주사위 롤링 진행
                 triggeredSegmentsThisRun.Add(segmentKey);
+
+                // 주사위 굴리러 출발
                 RollSegmentEvent(segment);
+
+                // 만약 이 세그먼트가 만족되었다면 다음 세그먼트는 이번 틱에서 연달아 실행되지 않도록 브레이크
+                break;
             }
         }
     }
@@ -156,7 +110,8 @@ public class SplineEventManager : MonoBehaviour
         // 1단계: 종합 이벤트 발생 유무 주사위 던지기
         float diceRoll = Random.Range(0f, 100f);
 
-        Debug.Log($"<color=#38BDF8>[이벤트 엔진]</color> <b>[{segment.segmentName}]</b> 구간 진입 완료. (주사위 결과: {diceRoll:F1}% / 조건 성공 확률: {segment.triggerProbability}%)");
+        Debug.Log(
+            $"<color=#38BDF8>[이벤트 엔진]</color> <b>[{segment.segmentName}]</b> 구간 진입 완료. (주사위 결과: {diceRoll:F1}% / 조건 성공 확률: {segment.triggerProbability}%)");
 
         if (diceRoll <= segment.triggerProbability)
         {
@@ -165,11 +120,14 @@ public class SplineEventManager : MonoBehaviour
 
             if (selected != null)
             {
+                // 실제 연출이 격발되었으므로 마지막 발동 시간 기록 및 이벤트 실행
+                lastEventTriggeredTime = Time.time;
                 TriggerEvent(segment.segmentName, selected);
             }
             else
             {
-                Debug.LogWarning($"[이벤트 엔진] {segment.segmentName}에서 이벤트가 정상 트리거 되었으나, 풀 안에 들어있는 가능한 이벤트 항목이 비어있어 취소되었습니다.");
+                Debug.LogWarning(
+                    $"[이벤트 엔진] {segment.segmentName}에서 이벤트가 정상 트리거 되었으나, 풀 안에 들어있는 가능한 이벤트 항목이 비어있어 취소되었습니다.");
             }
         }
         else
@@ -235,11 +193,12 @@ public class SplineEventManager : MonoBehaviour
                 break;
         }
 
-        Debug.LogWarning($"<color={colorHex}><b>[🚨 시뮬레이션 돌발 상황]</b></color> {segmentName}에서 <b>[{ev.eventName}]</b> 현상이 관측되었습니다! " +
+        Debug.LogWarning(
+            $"<color={colorHex}><b>[🚨 시뮬레이션 돌발 상황]</b></color> {segmentName}에서 <b>[{ev.eventName}]</b> 현상이 관측되었습니다! " +
             $"\n - 분류: <color={colorHex}>{ev.eventType}</color> / 가중치 선별 성공");
     }
-    
-    #if UNITY_EDITOR
+
+#if UNITY_EDITOR
     /// <summary>
     /// 에디터 상에서 하이어라키의 SplineEventManager를 마우스로 '클릭(선택)'했을 때, 
     /// 스플라인 위 해당 세그먼트 구간들을 고유 테마 색상으로 색칠하고 요약 가이드 텍스트를 공중에 띄워줍니다.
@@ -277,7 +236,7 @@ public class SplineEventManager : MonoBehaviour
                 {
                     float factor = (float)i / segmentsResolution;
                     float sampleT = Mathf.Lerp(segment.minT, segment.maxT, factor);
-                    
+
                     // 로컬 스플라인 좌표 계산 후 월드 좌표 변환
                     Vector3 localPos = spline.EvaluatePosition(sampleT);
                     drawPoints[i] = container.transform.TransformPoint(localPos);
@@ -305,8 +264,9 @@ public class SplineEventManager : MonoBehaviour
                 boldLabelStyle.alignment = TextAnchor.MiddleCenter;
 
                 // 디테일한 구간 요약 문자열 조립
-                string labelContent = $"★ {segment.segmentName}\n({segment.minT:F2} ~ {segment.maxT:F2})\n[확률: {segment.triggerProbability}%, 대표: {primaryEventName}]";
-                
+                string labelContent =
+                    $"★ {segment.segmentName}\n({segment.minT:F2} ~ {segment.maxT:F2})\n[확률: {segment.triggerProbability}%, 대표: {primaryEventName}]";
+
                 // 중심점 살짝 위(Y + 1.2m)에 빌보드 노출
                 Handles.Label(centerWorldPos + Vector3.up * 1.2f, labelContent, boldLabelStyle);
             }
@@ -321,18 +281,18 @@ public class SplineEventManager : MonoBehaviour
         switch (type)
         {
             case SimulationEventType.Combat:
-                return new Color(1f, 0.25f, 0.25f, 0.9f);      // 강렬한 네온 레드
+                return new Color(1f, 0.25f, 0.25f, 0.9f); // 강렬한 네온 레드
             case SimulationEventType.SevereWeather:
-                return new Color(1f, 0.6f, 0.15f, 0.9f);       // 경고 오렌지
+                return new Color(1f, 0.6f, 0.15f, 0.9f); // 경고 오렌지
             case SimulationEventType.EngineBreakdown:
-                return new Color(0.68f, 0.35f, 1f, 0.9f);      // 마법 연보라
+                return new Color(0.68f, 0.35f, 1f, 0.9f); // 마법 연보라
             case SimulationEventType.ResourceDiscovery:
-                return new Color(0.15f, 0.9f, 0.4f, 0.9f);      // 회복 에메랄드 그린
+                return new Color(0.15f, 0.9f, 0.4f, 0.9f); // 회복 에메랄드 그린
             case SimulationEventType.BanditAmbush:
-                return new Color(1f, 0.2f, 0.55f, 0.9f);       // 위험 마젠타 핑크
+                return new Color(1f, 0.2f, 0.55f, 0.9f); // 위험 마젠타 핑크
             default:
-                return new Color(0.9f, 0.9f, 0.2f, 0.8f);       // 대기 옐로우
+                return new Color(0.9f, 0.9f, 0.2f, 0.8f); // 대기 옐로우
         }
     }
-#endif
 }
+#endif
