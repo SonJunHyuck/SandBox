@@ -87,8 +87,6 @@ public class RegionSplineGeneratorWindow : EditorWindow
         // 1단계: 모든 거점(Foothold)에서 시작하여 중간에 Event 노드를 거쳐 다른 거점에 닿는 체인을 탐색합니다.
         foreach (Region startRegion in allRegions)
         {
-            if (startRegion.regionType != RegionType.Foothold) continue;
-
             foreach (Region neighbor in startRegion.connectedRegions)
             {
                 if (neighbor == null) continue;
@@ -186,7 +184,7 @@ public class RegionSplineGeneratorWindow : EditorWindow
     private void FindChainsRecursively(Region current, List<Region> currentChain, HashSet<Region> visited, List<List<Region>> allChains)
     {
         // 베이스 캠프 도달: 중간 노드가 Foothold(거점)에 무사 도달 시 탐색 성공 처리
-        if (current.regionType == RegionType.Foothold && currentChain.Count > 1)
+        if (currentChain.Count > 1)
         {
             allChains.Add(new List<Region>(currentChain));
             return;

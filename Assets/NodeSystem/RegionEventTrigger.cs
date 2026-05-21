@@ -1,48 +1,76 @@
-﻿using UnityEngine;
+﻿using UnityEditor;
+using UnityEngine;
 
 [DisallowMultipleComponent]
-[RequireComponent(typeof(Region))]
-public class RegionEventTrigger : MonoBehaviour
+[RequireComponent(typeof(SphereCollider))]
+public class SplineEventTrigger : MonoBehaviour
 {
-    private Region cachedRegion;
+    [Header("물리 충돌 감지 반경 설정")]
+    [Tooltip("이동형 본진이 이 반경을 밟으면 이벤트가 발생합니다.")]
+    [Range(0.5f, 5.0f)]
+    public float triggerRadius = 1.2f;
 
-    private void Start()
+    [Header("돌발 상황 정보")]
+    [Tooltip("수동 혹은 자동 롤링이 아닌, 이 트리거가 직접 유발할 시나리오 및 이벤트 요약을 입력합니다.")]
+    public string triggerSummary = "돌발 기습 구역";
+
+    private SphereCollider sphereCollider;
+
+    private void Awake()
     {
-        cachedRegion = GetComponent<Region>();
-
-        // 1단계: 혹시 에디터에서 실수로 일반 Foothold 노드에 이 스크립트를 올린 경우 경고 후 자멸 처리
-        if (cachedRegion.regionType != RegionType.Event)
-        {
-            Debug.LogError($"[RegionEventTrigger] {name} 노드는 일반 거점(Foothold)입니다! 이벤트 구역이 아닌 곳에 트리거 장착을 차단하고 컴포넌트를 즉시 파괴합니다.");
-            Destroy(this);
-            return;
-        }
-
-        // 2단계: 구체형 물리 트리거 콜라이더(IsTrigger = True)가 없다면 런타임에 안전하게 장착시킵니다.
-        SphereCollider sphereCollider = GetComponent<SphereCollider>();
-        if (sphereCollider == null)
-        {
-            sphereCollider = gameObject.AddComponent<SphereCollider>();
-        }
-
+        // 런타임에 안전하고 정밀하게 트리거가 세팅되도록 보장합니다.
+        sphereCollider = GetComponent<SphereCollider>();
         sphereCollider.isTrigger = true;
-        sphereCollider.radius = 1.2f; // 캐릭터가 관통할 때 닿을 수 있게 넉넉한 반지름 제공
+        sphereCollider.radius = triggerRadius;
+    }
+
+    private void OnValidate()
+    {
+        // 에디터에서 인스펙터 수치를 바꿨을 때 실시간으로 구체 콜라이더 반경 갱신
+        if (sphereCollider == null) sphereCollider = GetComponent<SphereCollider>();
+        if (sphereCollider != null)
+        {
+            sphereCollider.isTrigger = true;
+            sphereCollider.radius = triggerRadius;
+        }
     }
 
     /// <summary>
-    /// 무버 캐릭터가 스플라인을 주행하다 이 보이지 않는 구역을 스쳐 지나갈 때 발동하는 충돌 콜백
+    /// 주행 중인 이동 본진(Navigator)이 이 물리 영역을 관통하는 첫 프레임을 검출합니다.
     /// </summary>
     private void OnTriggerEnter(Collider other)
     {
-        // 3단계: 트리거 박스 안으로 기차/차량 무버가 지나가는지 컴포넌트 검출 체크
         RegionNavigator navigator = other.GetComponent<RegionNavigator>();
         if (navigator != null)
         {
-            // 실시간 주행 감각 모니터링을 위한 풍부한 디버깅 출력
-            Debug.LogWarning($"<color=#10B981><b>[🚨 이벤트 노드 진입 감지]</b></color> 차량 무버가 숨겨진 위협 구역 <b>[{name}]</b>의 중심부를 무사히 통과하고 있습니다!" +
-                             $"\n - 현재 경로 상 목적지: {navigator.currentRegion?.name}");
-            
-            // [연동 힌트]: 이 부분에 이벤트 매니저나 시뮬레이션 HP 감소, 전투 연출 개시 등의 기획 로직을 자유롭게 연결하시면 됩니다!
+            // [클린 구조화 완료] 이제 이 지뢰(Trigger)는 Region과 아무 상관없이 단독으로 동작합니다.
+            Debug.LogWarning($"<color=#EF4444><b>[🚨 위협 조우]</b></color> 본진 이동대형이 위험 지점 <b>[{name}]</b>에 강제 진입했습니다!" +
+                $"\n - 위협 내용: {triggerSummary} / 이동 중지 및 대응 연출 단계 개시 필요");
+
+            // [추후 확장 팁]: 이곳에 주행 중인 본진 대형을 정지(navigator.IsMoving 제어)시키거나, 
+            // 몬스터 습격 씬을 열거나, 본진 내구도를 깎는 전투 엔진 코드를 바로 실행하면 됩니다.
         }
     }
+
+#if UNITY_EDITOR
+    private void OnDrawGizmos()
+    {
+        // 에디터 씬 뷰에서 보이지 않는 물리 감지 범위를 빨간색 와이어 구체로 예쁘게 연출
+        Gizmos.color = new Color(0.94f, 0.25f, 0.25f, 0.6f);
+        Gizmos.DrawWireSphere(transform.position, triggerRadius);
+
+        // 정면 방향 지시 가이드 라인 그리기 (주행 차량과 정대하기 위함)
+        Gizmos.color = Color.red;
+        Gizmos.DrawRay(transform.position, transform.forward * 1.5f);
+
+        GUIStyle labelStyle = new GUIStyle()
+        {
+            normal = { textColor = new Color(0.94f, 0.4f, 0.4f) },
+            alignment = TextAnchor.MiddleCenter,
+            fontStyle = FontStyle.Bold,
+            fontSize = 9
+        };
+        Handles.Label(transform.position + Vector3.down * 0.8f, $"[Trigger: {triggerSummary}]", labelStyle);
+    }
+#endif
 }
