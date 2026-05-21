@@ -65,6 +65,19 @@ public class SplineEventPopulatorWindow : EditorWindow
         {
             PopulateCleanEventsOnSpline();
         }
+        
+        EditorGUILayout.Space(15);
+
+        GUI.backgroundColor = new Color(0.9f, 0.3f, 0.3f); // 경고 및 위협 성격에 맞춘 딥 레드 버튼
+        if (GUILayout.Button("일괄 배치", GUILayout.Height(42)))
+        {
+            for (int i = 0; i < targetContainer.Splines.Count; i++)
+            {
+                targetSplineIndex = i;
+                PopulateCleanEventsOnSpline();
+            }
+        }
+        
         GUI.backgroundColor = Color.white;
     }
 
