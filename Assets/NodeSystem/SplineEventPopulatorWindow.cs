@@ -11,6 +11,8 @@ public class SplineEventPopulatorWindow : EditorWindow
     private float intervalDistance = 15f; // X미터 간격 자동 설치
     private float startOffset = 5f;       // 시작 거점 안전 마진
     private float endOffset = 5f;         // 종착 거점 안전 마진
+
+    private Transform eventRoot;
     
     [MenuItem("Tools/Spline Event Populator")]
     public static void ShowWindow()
@@ -47,7 +49,8 @@ public class SplineEventPopulatorWindow : EditorWindow
 
         // 배치할 위협 트리거 프리팹 (SplineEventTrigger 컴포넌트가 무조건 붙어있어야 함)
         eventPrefab = (GameObject)EditorGUILayout.ObjectField("Event Trigger Prefab", eventPrefab, typeof(GameObject), false);
-
+        eventRoot = (Transform)EditorGUILayout.ObjectField("Event Root Parent", eventRoot, typeof(Transform), true);
+        
         EditorGUILayout.Space(10);
         GUILayout.Label("미터 단위 간격 상세 피드백", EditorStyles.boldLabel);
         intervalDistance = EditorGUILayout.FloatField("스폰 간격 (Distance)", intervalDistance);
@@ -115,10 +118,12 @@ public class SplineEventPopulatorWindow : EditorWindow
         if (oldGroup != null)
         {
             DestroyImmediate(oldGroup);
+            
         }
         
         GameObject rootGo = new GameObject($"Populated_Triggers_Spline_{targetSplineIndex}");
         Undo.RegisterCreatedObjectUndo(rootGo, "Create Populated Triggers Group");
+        rootGo.transform.SetParent(eventRoot);
 
         int spawnedCount = 0;
 
@@ -138,8 +143,9 @@ public class SplineEventPopulatorWindow : EditorWindow
             {
                 worldRot = Quaternion.LookRotation(worldDir);
             }
-
+            
             GameObject spawnedObj = (GameObject)PrefabUtility.InstantiatePrefab(eventPrefab);
+            
             if (spawnedObj != null)
             {
                 spawnedObj.transform.position = worldPos;
